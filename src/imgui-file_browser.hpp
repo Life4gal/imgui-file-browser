@@ -143,12 +143,6 @@ namespace ImGui
 		auto clear_state(State state) noexcept -> void;
 
 		// ========================
-		// path
-		// ========================
-
-		// auto set_working_directory_un
-
-		// ========================
 		// filter
 		// ========================
 
