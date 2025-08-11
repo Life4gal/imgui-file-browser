@@ -146,3 +146,5 @@ target_link_libraries(
 	${IMFB_SFML_LIBRARIES}
 	imgui::imgui
 )
+
+add_subdirectory(example)
