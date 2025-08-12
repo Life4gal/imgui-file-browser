@@ -40,30 +40,47 @@ Include the header and link the library:
 ```cpp
 #include <imgui-file_browser.hpp>
 
-ImGui::FileBrowser browser{"Open File"}; 
-
-browser.set_flags(
-		// ImGui::FileBrowserFlags::NO_MODAL,
-		ImGui::FileBrowserFlags::CLOSE_ON_ESCAPE,
-		ImGui::FileBrowserFlags::CONFIRM_ON_ENTER,
-		ImGui::FileBrowserFlags::MULTIPLE_SELECTION,
-		ImGui::FileBrowserFlags::PATH_EDITABLE
-	);
-browser.set_filter({".hpp", ".cpp", ".dll"});
-
-if (main_loop())
+auto main() noexcept -> int
 {
-	if (button("open fb"))
+	ImGui::FileBrowser file_browser{"FileBrowser"}; 
+
+	file_browser.set_flags(
+			// ImGui::FileBrowserFlags::NO_MODAL,
+			ImGui::FileBrowserFlags::CLOSE_ON_ESCAPE,
+			ImGui::FileBrowserFlags::CONFIRM_ON_ENTER,
+			ImGui::FileBrowserFlags::MULTIPLE_SELECTION,
+			ImGui::FileBrowserFlags::PATH_EDITABLE
+		);
+	file_browser.set_filter({".hpp", ".cpp", ".dll"});
+
+	while (main_loop())
 	{
-		browser.open(); 
-	}
+		// Process event
+		// ...
 
-	browser.show(); 
+		// Update
+		// ...
 
-	if (browser.has_selected()) 
-	{ 
-		auto selected = browser.get_selected(); 
-		// Use selected file 
+		ImGui::Begin("IMFB");
+		{
+			if (ImGui::Button("Open FileBrowser"))
+			{
+				file_browser.open();
+			}
+		}
+		ImGui::End();
+
+		file_browser.show(); 
+
+		if (file_browser.has_selected()) 
+		{ 
+			auto selected = file_browser.get_selected(); 
+			// Use selected file 
+			// ...
+		}
+
+		// Render
+		// ...
 	}
 }
 ```
