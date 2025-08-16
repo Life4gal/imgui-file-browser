@@ -45,12 +45,16 @@ auto main() noexcept -> int
 	ImGui::FileBrowser file_browser{"FileBrowser"}; 
 
 	file_browser.set_flags(
-			// ImGui::FileBrowserFlags::NO_MODAL,
-			ImGui::FileBrowserFlags::CLOSE_ON_ESCAPE,
-			ImGui::FileBrowserFlags::CONFIRM_ON_ENTER,
-			ImGui::FileBrowserFlags::MULTIPLE_SELECTION,
-			ImGui::FileBrowserFlags::PATH_EDITABLE
-		);
+		// ImGui::FileBrowserFlags::NO_MODAL,
+		// ImGui::FileBrowserFlags::SELECT_DIRECTORY,
+		ImGui::FileBrowserFlags::MULTIPLE_SELECTION,
+		ImGui::FileBrowserFlags::CONFIRM_ON_ENTER,
+		ImGui::FileBrowserFlags::CLOSE_ON_ESCAPE,
+		ImGui::FileBrowserFlags::ALLOW_SET_WORKING_DIRECTORY,
+		ImGui::FileBrowserFlags::ALLOW_CREATE,
+		ImGui::FileBrowserFlags::ALLOW_RENAME,
+		ImGui::FileBrowserFlags::ALLOW_DELETE
+	);
 	file_browser.set_filter({".hpp", ".cpp", ".dll"});
 
 	while (main_loop())
