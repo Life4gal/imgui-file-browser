@@ -39,6 +39,7 @@ auto main() noexcept -> int
 			{
 				window.close();
 			}
+		}
 
 			ImGui::SFML::Update(window, delta_clock.restart());
 
@@ -74,7 +75,6 @@ auto main() noexcept -> int
 
 			window.display();
 		}
-	}
 
 	ImGui::SFML::Shutdown();
 	return 0;
