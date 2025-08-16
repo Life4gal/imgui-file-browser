@@ -15,35 +15,56 @@ namespace ImGui
 		// ============================
 		// WINDOW
 		// ============================
-		NO_TITLEBAR = 0b0000'0000'0000'0001,
-		NO_MODAL = 0b0000'0000'0000'0010,
 
-		// ============================
-		// INTERACTIVE
-		// ============================
+		// 0~3
 
-		CLOSE_ON_ESCAPE = 0b0000'0000'0001'0000,
-		CONFIRM_ON_ENTER = 0b0000'0000'0010'0000,
+		NO_TITLEBAR = 1 << 0,
+		NO_MODAL = 1 << 1,
 
 		// ============================
 		// SELECTION
 		// ============================
 
-		SELECT_DIRECTORY = 0b0000'0001'0000'0000,
-		HIDE_REGULAR_FILES = 0b0000'0010'0000'0000,
-		MULTIPLE_SELECTION = 0b0000'0010'0000'0000,
+		// 4~7
+
+		SELECT_DIRECTORY = 1 << 4,
+		HIDE_REGULAR_FILES = 1 << 5,
+		MULTIPLE_SELECTION = 1 << 6,
 
 		// ============================
-		// PATH
+		// INTERACTIVE
 		// ============================
 
-		PATH_EDITABLE = 0b0001'0000'0000'0000,
+		// 8~15
+
+		CLOSE_ON_ESCAPE = 1 << 8,
+		CONFIRM_ON_ENTER = 1 << 9,
+
+		ALLOW_SET_WORKING_DIRECTORY = 1 << 10,
+
+		ALLOW_CREATE_FILE = 1 << 11,
+		ALLOW_CREATE_DIRECTORY = 1 << 12,
+		ALLOW_CREATE = ALLOW_CREATE_FILE | ALLOW_CREATE_DIRECTORY,
+
+		ALLOW_RENAME_FILE = 1 << 13,
+		ALLOW_RENAME_DIRECTORY = 1 << 14,
+		ALLOW_RENAME = ALLOW_RENAME_FILE | ALLOW_RENAME_DIRECTORY,
+
+		ALLOW_DELETE_FILE = 1 << 15,
+		ALLOW_DELETE_DIRECTORY = 1 << 16,
+		ALLOW_DELETE = ALLOW_DELETE_FILE | ALLOW_DELETE_DIRECTORY,
 	};
 
 	class FileBrowser final
 	{
 	public:
 		using size_type = int;
+
+		struct edit_string_buffer_type
+		{
+			std::unique_ptr<char[]> data;
+			std::size_t length;
+		};
 
 		constexpr static std::string_view parent_path_name{"(last level)"};
 
@@ -52,34 +73,61 @@ namespace ImGui
 	private:
 		enum class State : std::uint32_t
 		{
-			NONE = 0b0000'0000'0000'0000,
+			NONE = 0,
 
 			// ========================
-			// position
+			// STATUS
 			// ========================
 
-			POSITION_DIRTY = 0b0000'0000'0000'0001,
+			// 0~3
+
+			POSITION_DIRTY = 1 << 0,
 
 			// ========================
 			// WINDOW
 			// ========================
 
-			OPENING = 0b0000'0000'0001'0000,
-			CLOSING = 0b0000'0000'0010'0000,
-			OPENED = 0b0000'0000'0100'0000,
+			// 4~7
+
+			OPENING = 1 << 4,
+			CLOSING = 1 << 5,
+			OPENED = 1 << 6,
 
 			// ========================
 			// SELECTION
 			// ========================
 
-			SELECTED = 0b0000'0001'0000'0000,
+			// 8~11
+
+			SELECTED = 1 << 8,
 
 			// ========================
-			// PATH
+			// INTERACTIVE
 			// ========================
 
-			EDITING_PATH = 0b0001'0000'0000'0000,
-			FOCUSING_PATH_EDITOR_NEXT_FRAME = 0b0010'0000'0000'0000,
+			// 12~15
+
+			// focus the editor(InputText) next frame
+			FOCUSING_EDITOR_NEXT_FRAME = 1 << 12,
+			// double click selectable ==> change directory
+			SET_WORKING_DIRECTORY_NEXT_FRAME = 1 << 13,
+			// right click selectable ==> delete file/directory
+			DELETE_SELECTED_NEXT_FRAME = 1 << 14,
+
+			// 16~23
+
+			// editing working directory editor(InputText)
+			SETTING_WORKING_DIRECTORY = 1 << 16,
+
+			// editing new file or directory editor(InputText)
+			CREATING_FILE = 1 << 17,
+			CREATING_DIRECTORY = 1 << 18,
+			CREATING = CREATING_FILE | CREATING_DIRECTORY,
+
+			// editing rename file or directory editor(InputText)
+			RENAMING_FILE = 1 << 19,
+			RENAMING_DIRECTORY = 1 << 20,
+			RENAMING = RENAMING_FILE | RENAMING_DIRECTORY,
 		};
 
 		struct file_descriptor
@@ -107,7 +155,14 @@ namespace ImGui
 		// ========================
 
 		std::filesystem::path working_directory_;
-		std::string edit_working_directory_buffer_;
+
+		// ========================
+		// interactive
+		// ========================
+
+		edit_string_buffer_type edit_working_directory_buffer_;
+		edit_string_buffer_type edit_create_file_or_directory_buffer_;
+		edit_string_buffer_type edit_rename_file_or_directory_buffer_;
 
 		// ========================
 		// selection
@@ -136,11 +191,18 @@ namespace ImGui
 
 		std::string tooltip_;
 
+		// ========================
+		// state
+		// ========================
+
 		[[nodiscard]] auto has_state(State state) const noexcept -> bool;
 
 		auto append_state(State state) noexcept -> void;
 
 		auto clear_state(State state) noexcept -> void;
+
+		// editing something(InputText)
+		[[nodiscard]] auto is_state_editing() const noexcept -> bool;
 
 		// ========================
 		// filter
@@ -155,6 +217,24 @@ namespace ImGui
 		// ========================
 
 		auto update_file_descriptors() noexcept -> void;
+
+		// ========================
+		// show
+		// ========================
+
+		auto show_working_path() noexcept -> void;
+
+		auto show_tooltip() const noexcept -> void;
+
+		auto show_files_window_context() noexcept -> void;
+
+		auto show_files_window_context_on_creating() noexcept -> void;
+
+		auto show_files_window_context_on_renaming() noexcept -> void;
+
+		auto show_files_window() noexcept -> void;
+
+		auto show_bottom_tools() noexcept -> void;
 
 	public:
 		FileBrowser(const FileBrowser&) noexcept = delete;

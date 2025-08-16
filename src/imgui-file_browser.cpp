@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <format>
+#include <fstream>
 #include <optional>
 #include <ranges>
 
@@ -10,7 +11,7 @@
 
 namespace
 {
-	using namespace ImGui;
+	using ImGui::FileBrowser;
 
 	template<typename Function>
 		requires std::is_invocable_v<Function>
@@ -44,16 +45,19 @@ namespace
 	{
 		if (callback_data and callback_data->EventFlag & ImGuiInputTextFlags_CallbackResize)
 		{
-			if (auto* string = static_cast<std::string*>(callback_data->UserData);
-				std::cmp_less(string->capacity(), callback_data->BufSize))
+			if (auto* string = static_cast<FileBrowser::edit_string_buffer_type*>(callback_data->UserData);
+				std::cmp_less(string->length, callback_data->BufSize))
 			{
-				const auto old_size = string->capacity();
+				const auto old_size = string->length;
 				const auto buf_size = static_cast<std::size_t>(callback_data->BufSize);
 				const auto new_size = static_cast<std::size_t>(static_cast<float>(std::ranges::max(old_size, buf_size)) * 1.5f);
 
-				string->resize(new_size);
+				const auto old_data = std::move(string->data);
+				string->data = std::make_unique_for_overwrite<char[]>(new_size);
+				std::ranges::copy(old_data.get(), old_data.get() + old_size, string->data.get());
+				string->data[old_size] = '\0';
 
-				callback_data->Buf = string->data();
+				callback_data->Buf = string->data.get();
 				callback_data->BufDirty = true;
 			}
 		}
@@ -150,6 +154,14 @@ namespace ImGui
 	auto FileBrowser::clear_state(const State state) noexcept -> void
 	{
 		states_ = static_cast<State>(std::to_underlying(states_) & ~std::to_underlying(state));
+	}
+
+	auto FileBrowser::is_state_editing() const noexcept -> bool
+	{
+		return
+				has_state(State::SETTING_WORKING_DIRECTORY) or
+				has_state(State::CREATING) or
+				has_state(State::RENAMING);
 	}
 
 	auto FileBrowser::is_filter_matched(const std::filesystem::path& extension) const noexcept -> bool
@@ -281,6 +293,685 @@ namespace ImGui
 		}
 	}
 
+	auto FileBrowser::show_working_path() noexcept -> void
+	{
+		if (has_state(State::SETTING_WORKING_DIRECTORY))
+		{
+			if (has_state(State::FOCUSING_EDITOR_NEXT_FRAME))
+			{
+				ImGui::SetKeyboardFocusHere();
+			}
+
+			ImGui::PushItemWidth(-1);
+			ImGui::InputText(
+				"##working_directory_path",
+				edit_working_directory_buffer_.data.get(),
+				edit_working_directory_buffer_.length,
+				ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_AutoSelectAll,
+				expand_string_buffer,
+				&edit_working_directory_buffer_
+			);
+			ImGui::PopItemWidth();
+
+			if (ImGui::IsItemDeactivatedAfterEdit())
+			{
+				clear_state(State::SETTING_WORKING_DIRECTORY);
+
+				std::error_code error_code{};
+
+				do
+				{
+					const auto length = std::strlen(edit_working_directory_buffer_.data.get());
+					edit_working_directory_buffer_.data[length] = '\0';
+
+					const std::string_view view{edit_working_directory_buffer_.data.get(), edit_working_directory_buffer_.data.get() + static_cast<std::ptrdiff_t>(length)};
+
+					// "C:\\workspace\\my_project\\" ==> "C:\\workspace\\my_project"
+					if (view.ends_with('\\') or view.ends_with('/'))
+					{
+						edit_working_directory_buffer_.data[length - 1] = '\0';
+					}
+
+					std::filesystem::path path{view};
+					if (is_directory(path, error_code))
+					{
+						working_directory_ = std::move(path);
+						append_state(State::SET_WORKING_DIRECTORY_NEXT_FRAME);
+						break;
+					}
+
+					if (error_code)
+					{
+						tooltip_ = std::format("Error occurred while processing\n\t{}\n{}", view, error_code.message());
+						break;
+					}
+
+					auto parent_path = path.parent_path();
+					if (is_directory(parent_path, error_code))
+					{
+						working_directory_ = std::move(parent_path);
+						append_state(State::SET_WORKING_DIRECTORY_NEXT_FRAME);
+						break;
+					}
+
+					if (error_code)
+					{
+						tooltip_ = std::format("Error occurred while processing\n\t{}\n{}", parent_path.string(), error_code.message());
+						break;
+					}
+
+					tooltip_ = std::format("[{}] is not a valid directory", view);
+				} while (false);
+			}
+		}
+		else
+		{
+			std::filesystem::path combined_working_directory{};
+			bool pressed = false;
+
+			for (const auto [index, sub]: std::views::enumerate(working_directory_))
+			{
+				if (not pressed)
+				{
+					combined_working_directory /= sub;
+
+#ifdef _WIN32
+					if (index == 0)
+					{
+						// add '\'
+						combined_working_directory /= "\\";
+					}
+#endif
+				}
+
+#ifdef _WIN32
+
+				// skip '\'
+				// e.g. 'C:' '\' 'workspace'
+				if (index == 1)
+				{
+					assert(sub == "\\");
+					continue;
+				}
+#endif
+
+				ImGui::PushID(static_cast<int>(index));
+				if (index > 0)
+				{
+					ImGui::SameLine();
+				}
+				const auto label = sub.string();
+				pressed |= ImGui::SmallButton(label.c_str());
+				ImGui::PopID();
+			}
+
+			if (pressed)
+			{
+				working_directory_ = combined_working_directory;
+				append_state(State::SET_WORKING_DIRECTORY_NEXT_FRAME);
+			}
+
+			if (has_flag(FileBrowserFlags::ALLOW_SET_WORKING_DIRECTORY))
+			{
+				ImGui::SameLine();
+
+				if (ImGui::SmallButton("#"))
+				{
+					tooltip_.clear();
+
+					const auto working_directory_string = working_directory_.string();
+
+					edit_working_directory_buffer_.length = working_directory_string.size() + 1;
+					edit_working_directory_buffer_.data = std::make_unique_for_overwrite<char[]>(edit_working_directory_buffer_.length);
+					edit_working_directory_buffer_.data[working_directory_string.size()] = '\0';
+
+					std::ranges::copy(working_directory_string, edit_working_directory_buffer_.data.get());
+
+					append_state(State::SETTING_WORKING_DIRECTORY);
+					append_state(State::FOCUSING_EDITOR_NEXT_FRAME);
+				}
+				else if (ImGui::IsItemHovered())
+				{
+					ImGui::SetTooltip("Edit the current path");
+				}
+			}
+
+			ImGui::SameLine();
+			// Refresh
+			if (ImGui::SmallButton("*"))
+			{
+				tooltip_.clear();
+
+				update_file_descriptors();
+			}
+			else if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("Refresh");
+			}
+		}
+	}
+
+	auto FileBrowser::show_tooltip() const noexcept -> void
+	{
+		if (not tooltip_.empty())
+		{
+			ImGui::PushStyleColor(ImGuiCol_Text, ImColor{255, 0, 0}.operator ImVec4());
+			ImGui::TextUnformatted(tooltip_.c_str(), tooltip_.c_str() + tooltip_.size());
+			ImGui::PopStyleColor();
+		}
+	}
+
+	auto FileBrowser::show_files_window_context() noexcept -> void
+	{
+		if (has_flag(FileBrowserFlags::ALLOW_CREATE))
+		{
+			if (ImGui::BeginPopupContextWindow(
+				"file_context_menu",
+				ImGuiPopupFlags_MouseButtonRight |
+				ImGuiPopupFlags_NoOpenOverExistingPopup
+			))
+			{
+				if (has_flag(FileBrowserFlags::ALLOW_CREATE_FILE) and ImGui::MenuItem("New file"))
+				{
+					tooltip_.clear();
+					edit_create_file_or_directory_buffer_.data[0] = '\0';
+
+					clear_selected();
+
+					append_state(State::CREATING_FILE);
+					append_state(State::FOCUSING_EDITOR_NEXT_FRAME);
+				}
+
+				if (has_flag(FileBrowserFlags::ALLOW_CREATE_DIRECTORY) and ImGui::MenuItem("New directory"))
+				{
+					tooltip_.clear();
+					edit_create_file_or_directory_buffer_.data[0] = '\0';
+
+					clear_selected();
+
+					append_state(State::CREATING_DIRECTORY);
+					append_state(State::FOCUSING_EDITOR_NEXT_FRAME);
+				}
+
+				ImGui::EndPopup();
+			}
+		}
+
+		const auto select_directory = has_flag(FileBrowserFlags::SELECT_DIRECTORY);
+		const auto hide_regular_files = select_directory and has_flag(FileBrowserFlags::HIDE_REGULAR_FILES);
+
+		for (const auto& descriptor: file_descriptors_)
+		{
+			if (not descriptor.is_directory)
+			{
+				if (hide_regular_files)
+				{
+					continue;
+				}
+
+				if (not is_filter_matched(descriptor.extension))
+				{
+					continue;
+				}
+			}
+
+			if (const auto selected = selected_filenames_.contains(descriptor.name);
+				ImGui::Selectable(descriptor.display_name.c_str(), selected, ImGuiSelectableFlags_NoAutoClosePopups))
+			{
+				const auto selectable = descriptor.name != ".." and descriptor.is_directory == has_flag(FileBrowserFlags::SELECT_DIRECTORY);
+				const auto multiple_select =
+						has_flag(FileBrowserFlags::MULTIPLE_SELECTION) and
+						ImGui::GetIO().KeyCtrl and
+						ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+
+				if (selected)
+				{
+					if (multiple_select)
+					{
+						selected_filenames_.erase(descriptor.name);
+					}
+					else
+					{
+						selected_filenames_ = {descriptor.name};
+					}
+				}
+				else if (selectable)
+				{
+					if (multiple_select)
+					{
+						selected_filenames_.insert(descriptor.name);
+					}
+					else
+					{
+						selected_filenames_ = {descriptor.name};
+					}
+				}
+			}
+
+			if (has_flag(FileBrowserFlags::ALLOW_RENAME) or has_flag(FileBrowserFlags::ALLOW_DELETE))
+			{
+				if (ImGui::BeginPopupContextItem(descriptor.name.string().c_str(), ImGuiPopupFlags_MouseButtonRight))
+				{
+					if (
+						(has_flag(FileBrowserFlags::ALLOW_RENAME_FILE) == (not descriptor.is_directory)) or
+						(has_flag(FileBrowserFlags::ALLOW_RENAME_DIRECTORY) == descriptor.is_directory)
+					)
+					{
+						if (ImGui::MenuItem("Rename"))
+						{
+							selected_filenames_ = {descriptor.name};
+
+							const auto filename_string = descriptor.name.string();
+
+							edit_rename_file_or_directory_buffer_.length = filename_string.size() + 1;
+							edit_rename_file_or_directory_buffer_.data = std::make_unique_for_overwrite<char[]>(edit_rename_file_or_directory_buffer_.length);
+							edit_rename_file_or_directory_buffer_.data[filename_string.size()] = '\0';
+
+							std::ranges::copy(filename_string, edit_rename_file_or_directory_buffer_.data.get());
+
+							if (descriptor.is_directory)
+							{
+								append_state(State::RENAMING_DIRECTORY);
+							}
+							else
+							{
+								append_state(State::RENAMING_FILE);
+							}
+							append_state(State::FOCUSING_EDITOR_NEXT_FRAME);
+						}
+					}
+
+					if (
+						(has_flag(FileBrowserFlags::ALLOW_DELETE_FILE) == (not descriptor.is_directory)) or
+						(has_flag(FileBrowserFlags::ALLOW_DELETE_DIRECTORY) == descriptor.is_directory)
+					)
+					{
+						if (ImGui::MenuItem("Delete"))
+						{
+							selected_filenames_ = {descriptor.name};
+
+							append_state(State::DELETE_SELECTED_NEXT_FRAME);
+						}
+					}
+
+					ImGui::EndPopup();
+				}
+			}
+
+
+			if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) and ImGui::IsItemHovered())
+			{
+				if (descriptor.is_directory)
+				{
+					if (descriptor.name == "..")
+					{
+						working_directory_ = working_directory_.parent_path();
+					}
+					else
+					{
+						working_directory_ = working_directory_ / descriptor.name;
+					}
+
+					append_state(State::SET_WORKING_DIRECTORY_NEXT_FRAME);
+				}
+				else if (not has_flag(FileBrowserFlags::SELECT_DIRECTORY))
+				{
+					selected_filenames_ = {descriptor.name};
+
+					append_state(State::SELECTED);
+					ImGui::CloseCurrentPopup();
+				}
+			}
+		}
+	}
+
+	auto FileBrowser::show_files_window_context_on_creating() noexcept -> void
+	{
+		const auto select_directory = has_flag(FileBrowserFlags::SELECT_DIRECTORY);
+		const auto hide_regular_files = select_directory and has_flag(FileBrowserFlags::HIDE_REGULAR_FILES);
+
+		for (const auto& descriptor: file_descriptors_)
+		{
+			if (not descriptor.is_directory)
+			{
+				if (hide_regular_files)
+				{
+					continue;
+				}
+
+				if (not is_filter_matched(descriptor.extension))
+				{
+					continue;
+				}
+			}
+
+			ImGui::Selectable(descriptor.display_name.c_str(), false, ImGuiSelectableFlags_NoAutoClosePopups);
+		}
+
+		if (has_state(State::FOCUSING_EDITOR_NEXT_FRAME))
+		{
+			ImGui::SetKeyboardFocusHere();
+		}
+
+		ImGui::PushItemWidth(-1);
+		ImGui::InputText(
+			"##create_file_or_directory",
+			edit_create_file_or_directory_buffer_.data.get(),
+			edit_create_file_or_directory_buffer_.length,
+			ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_AutoSelectAll,
+			expand_string_buffer,
+			&edit_create_file_or_directory_buffer_
+		);
+		ImGui::PopItemWidth();
+
+		clear_state(State::FOCUSING_EDITOR_NEXT_FRAME);
+
+		if (ImGui::IsItemDeactivatedAfterEdit())
+		{
+			const auto file = has_state(State::CREATING_FILE);
+
+			if (file)
+			{
+				clear_state(State::CREATING_FILE);
+			}
+			else
+			{
+				clear_state(State::CREATING_DIRECTORY);
+			}
+
+			const auto length = std::strlen(edit_create_file_or_directory_buffer_.data.get());
+			edit_create_file_or_directory_buffer_.data[length] = '\0';
+
+			if (length == '\0')
+			{
+				if (file)
+				{
+					tooltip_ = "Empty file name, operation cancelled.";
+				}
+				else
+				{
+					tooltip_ = "Empty directory name, operation cancelled.";
+				}
+			}
+			else
+			{
+				const std::string_view view{edit_create_file_or_directory_buffer_.data.get(), edit_create_file_or_directory_buffer_.data.get() + static_cast<std::ptrdiff_t>(length)};
+				const auto full_path = working_directory_ / view;
+
+				if (file)
+				{
+					if (std::ofstream new_file{full_path};
+						new_file.is_open())
+					{
+						new_file.close();
+						update_file_descriptors();
+					}
+					else
+					{
+						const auto error_code = std::make_error_code(static_cast<std::errc>(errno));
+						tooltip_ = std::format("Failed to create file\n\t{}\n{}", view, error_code.message());
+					}
+				}
+				else
+				{
+					if (std::error_code error_code{};
+						create_directory(full_path, error_code))
+					{
+						update_file_descriptors();
+					}
+					else
+					{
+						tooltip_ = std::format("Failed to create directory\n\t{}\n\t{}", full_path.string(), error_code.message());
+					}
+				}
+			}
+		}
+	}
+
+	auto FileBrowser::show_files_window_context_on_renaming() noexcept -> void
+	{
+		const auto select_directory = has_flag(FileBrowserFlags::SELECT_DIRECTORY);
+		const auto hide_regular_files = select_directory and has_flag(FileBrowserFlags::HIDE_REGULAR_FILES);
+
+		for (const auto& descriptor: file_descriptors_)
+		{
+			if (not descriptor.is_directory)
+			{
+				if (hide_regular_files)
+				{
+					continue;
+				}
+
+				if (not is_filter_matched(descriptor.extension))
+				{
+					continue;
+				}
+			}
+
+			if (descriptor.name != *selected_filenames_.begin())
+			{
+				ImGui::Selectable(descriptor.display_name.c_str(), false, ImGuiSelectableFlags_NoAutoClosePopups);
+			}
+			else
+			{
+				if (has_state(State::FOCUSING_EDITOR_NEXT_FRAME))
+				{
+					ImGui::SetKeyboardFocusHere();
+				}
+
+				ImGui::PushItemWidth(-1);
+				ImGui::InputText(
+					"##rename_file_or_directory",
+					edit_rename_file_or_directory_buffer_.data.get(),
+					edit_rename_file_or_directory_buffer_.length,
+					ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_AutoSelectAll,
+					expand_string_buffer,
+					&edit_rename_file_or_directory_buffer_
+				);
+				ImGui::PopItemWidth();
+
+				clear_state(State::FOCUSING_EDITOR_NEXT_FRAME);
+
+				if (ImGui::IsItemDeactivatedAfterEdit())
+				{
+					const auto file = has_state(State::RENAMING_FILE);
+
+					if (file)
+					{
+						clear_state(State::RENAMING_FILE);
+					}
+					else
+					{
+						clear_state(State::RENAMING_DIRECTORY);
+					}
+
+					const auto length = std::strlen(edit_rename_file_or_directory_buffer_.data.get());
+					edit_rename_file_or_directory_buffer_.data[length] = 0;
+
+					if (length == '\0')
+					{
+						if (file)
+						{
+							tooltip_ = "Empty file name, operation cancelled.";
+						}
+						else
+						{
+							tooltip_ = "Empty directory name, operation cancelled.";
+						}
+					}
+					else
+					{
+						const std::string_view view{edit_rename_file_or_directory_buffer_.data.get(), edit_rename_file_or_directory_buffer_.data.get() + static_cast<std::ptrdiff_t>(length)};
+
+						const auto old_path = working_directory_ / descriptor.name;
+						const auto new_path = working_directory_ / view;
+
+						std::error_code error_code{};
+						std::filesystem::rename(old_path, new_path, error_code);
+
+						if (error_code)
+						{
+							tooltip_ = std::format(
+								"Error occurred while renaming\n\t{} to {}\n{}",
+								descriptor.name.string(),
+								view,
+								error_code.message()
+							);
+						}
+
+						update_file_descriptors();
+					}
+				}
+			}
+		}
+	}
+
+	auto FileBrowser::show_files_window() noexcept -> void
+	{
+		const auto height = ImGui::GetFrameHeightWithSpacing();
+
+		ImGui::BeginChild(
+			"files",
+			{0, -height},
+			ImGuiChildFlags_Borders
+		);
+		ScopeGuard child_guard
+		{
+				[]
+				{
+					ImGui::EndChild();
+				}
+		};
+
+		const auto creating_file_or_directory = has_state(State::CREATING) and (selected_filenames_.empty());
+		const auto renaming_file_or_directory = has_state(State::RENAMING) and (selected_filenames_.size() == 1);
+
+		assert(
+			(creating_file_or_directory == false and renaming_file_or_directory == false) or
+			(creating_file_or_directory != renaming_file_or_directory)
+		);
+
+		if (creating_file_or_directory)
+		{
+			show_files_window_context_on_creating();
+		}
+		else if (renaming_file_or_directory)
+		{
+			show_files_window_context_on_renaming();
+		}
+		else
+		{
+			show_files_window_context();
+		}
+
+		if (not is_state_editing())
+		{
+			if (const auto select_all =
+						has_flag(FileBrowserFlags::MULTIPLE_SELECTION) and
+						(ImGui::IsKeyDown(ImGuiKey_LeftCtrl) or ImGui::IsKeyDown(ImGuiKey_RightCtrl)) and
+						ImGui::IsKeyPressed(ImGuiKey_A);
+				select_all)
+			{
+				selected_filenames_.clear();
+
+				std::ranges::for_each(
+					// drop parent folder path
+					file_descriptors_ | std::views::drop(1),
+					[&](const file_descriptor& descriptor) noexcept -> void
+					{
+						if (has_flag(FileBrowserFlags::SELECT_DIRECTORY))
+						{
+							if (descriptor.is_directory)
+							{
+								selected_filenames_.insert(descriptor.name);
+							}
+						}
+						else
+						{
+							if (not descriptor.is_directory and is_filter_matched(descriptor.extension))
+							{
+								selected_filenames_.insert(descriptor.name);
+							}
+						}
+					}
+				);
+			}
+		}
+	}
+
+	auto FileBrowser::show_bottom_tools() noexcept -> void
+	{
+		// OK
+		{
+			const auto confirm_by_enter =
+					has_flag(FileBrowserFlags::CONFIRM_ON_ENTER) and
+					not is_state_editing() and
+					// ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) and
+					ImGui::IsWindowFocused(ImGuiFocusedFlags_NoPopupHierarchy) and
+					ImGui::IsKeyPressed(ImGuiKey_Enter);
+
+			if (has_flag(FileBrowserFlags::SELECT_DIRECTORY))
+			{
+				// select working directory anyway
+				if (ImGui::Button("OK") or confirm_by_enter)
+				{
+					append_state(State::SELECTED);
+					ImGui::CloseCurrentPopup();
+				}
+			}
+			else
+			{
+				ImGui::BeginDisabled(selected_filenames_.empty());
+				const auto ok = ImGui::Button("OK");
+				ImGui::EndDisabled();
+
+				if ((ok or confirm_by_enter) and not selected_filenames_.empty())
+				{
+					append_state(State::SELECTED);
+					ImGui::CloseCurrentPopup();
+				}
+			}
+		}
+
+		ImGui::SameLine();
+
+		// Cancel
+		{
+			const auto close_by_escape =
+					has_flag(FileBrowserFlags::CLOSE_ON_ESCAPE) and
+					not is_state_editing() and
+					ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) and
+					ImGui::IsWindowFocused(ImGuiFocusedFlags_NoPopupHierarchy) and
+					ImGui::IsKeyPressed(ImGuiKey_Enter);
+
+			if (ImGui::Button("Cancel") or has_state(State::CLOSING) or close_by_escape)
+			{
+				ImGui::CloseCurrentPopup();
+			}
+		}
+
+		// Filters
+		if (not filters_.empty())
+		{
+			ImGui::SameLine();
+			ImGui::PushItemWidth(8 * ImGui::GetFontSize());
+			if (ImGui::BeginCombo("##filters", filters_[selected_filter_].c_str()))
+			{
+				for (const auto [index, filter]: std::views::enumerate(filters_))
+				{
+					if (const auto selected = index == selected_filter_;
+						ImGui::Selectable(filter.c_str(), selected) and not selected)
+					{
+						selected_filter_ = index;
+					}
+				}
+
+				ImGui::EndCombo();
+			}
+			ImGui::PopItemWidth();
+		}
+	}
+
 	FileBrowser::~FileBrowser() noexcept = default;
 
 	FileBrowser::FileBrowser(
@@ -300,7 +991,18 @@ namespace ImGui
 		  flags_{flags},
 		  states_{State::NONE},
 		  working_directory_{std::move(open_directory)},
-		  selected_filter_{0} {}
+		  edit_working_directory_buffer_{.data = nullptr, .length = 0},
+		  edit_create_file_or_directory_buffer_{.data = nullptr, .length = 0},
+		  edit_rename_file_or_directory_buffer_{.data = nullptr, .length = 0},
+		  selected_filter_{0}
+	{
+		edit_create_file_or_directory_buffer_ =
+		{
+				.data = std::make_unique_for_overwrite<char[]>(64),
+				.length = 64,
+		};
+		edit_create_file_or_directory_buffer_.data[0] = '\0';
+	}
 
 	FileBrowser::FileBrowser(
 		const std::string_view title,
@@ -567,353 +1269,53 @@ namespace ImGui
 				}
 		};
 
-		std::optional<std::filesystem::path> newly_set_working_directory{std::nullopt};
-
-		// Edit path
-		if (has_state(State::EDITING_PATH))
+		if (has_state(State::SET_WORKING_DIRECTORY_NEXT_FRAME))
 		{
-			tooltip_.clear();
+			set_working_directory(working_directory_);
+			clear_state(State::SET_WORKING_DIRECTORY_NEXT_FRAME);
 
-			if (has_state(State::FOCUSING_PATH_EDITOR_NEXT_FRAME))
-			{
-				ImGui::SetKeyboardFocusHere();
-			}
-
-			ImGui::PushItemWidth(-1);
-			ImGui::InputText(
-				"##directory",
-				edit_working_directory_buffer_.data(),
-				edit_working_directory_buffer_.capacity(),
-				ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_AutoSelectAll,
-				expand_string_buffer,
-				&edit_working_directory_buffer_
-			);
-			ImGui::PopItemWidth();
-
-			if (not ImGui::IsItemActive() and not has_state(State::FOCUSING_PATH_EDITOR_NEXT_FRAME))
-			{
-				clear_state(State::EDITING_PATH);
-			}
-			clear_state(State::FOCUSING_PATH_EDITOR_NEXT_FRAME);
-
-			if (ImGui::IsItemDeactivatedAfterEdit())
-			{
-				std::error_code error_code{};
-
-				do
-				{
-					const auto length = std::strlen(edit_working_directory_buffer_.c_str());
-					edit_working_directory_buffer_.resize(length);
-
-					// "C:\\workspace\\my_project\\" ==> "C:\\workspace\\my_project"
-					if (edit_working_directory_buffer_.ends_with('\\') or edit_working_directory_buffer_.ends_with('/'))
-					{
-						edit_working_directory_buffer_.pop_back();
-					}
-
-					std::filesystem::path path{edit_working_directory_buffer_};
-					if (is_directory(path, error_code))
-					{
-						newly_set_working_directory = std::move(path);
-						break;
-					}
-
-					if (error_code)
-					{
-						tooltip_ = std::format("Error occurred while processing [{}]: {}", edit_working_directory_buffer_, error_code.message());
-						break;
-					}
-
-					auto parent_path = path.parent_path();
-					if (is_directory(parent_path, error_code))
-					{
-						newly_set_working_directory = std::move(parent_path);
-						break;
-					}
-
-					if (error_code)
-					{
-						tooltip_ = std::format("Error occurred while processing [{}]: {}", parent_path.string(), error_code.message());
-						break;
-					}
-
-					tooltip_ = std::format("[{}] is not a valid directory", edit_working_directory_buffer_);
-				} while (false);
-			}
+			clear_selected();
 		}
-		else
+		if (has_state(State::DELETE_SELECTED_NEXT_FRAME))
 		{
-			std::filesystem::path new_working_directory{};
-			bool pressed = false;
+			clear_state(State::DELETE_SELECTED_NEXT_FRAME);
 
-			for (const auto [index, sub]: std::views::enumerate(working_directory_))
+			std::error_code error_code{};
+
+			std::string tooltip{"Error occurred:\n"};
+			for (const auto& filename: selected_filenames_)
 			{
-				if (not pressed)
+				const auto full_path = working_directory_ / filename;
+				// remove(full_path, error_code);
+				remove_all(full_path, error_code);
+
+				if (error_code)
 				{
-					new_working_directory /= sub;
-				}
-
-#ifdef _WIN32
-				// skip '\'
-				// e.g. 'C:' '\' 'workspace'
-				if (index == 1)
-				{
-					assert(sub == "\\");
-					continue;
-				}
-#endif
-
-				ImGui::PushID(static_cast<int>(index));
-				if (index > 0)
-				{
-					ImGui::SameLine();
-				}
-				const auto label = sub.string();
-				pressed |= ImGui::SmallButton(label.c_str());
-				ImGui::PopID();
-			}
-
-			if (pressed)
-			{
-				set_working_directory(new_working_directory);
-			}
-
-			if (has_flag(FileBrowserFlags::PATH_EDITABLE))
-			{
-				ImGui::SameLine();
-
-				if (ImGui::SmallButton("#"))
-				{
-					const auto working_directory_string = working_directory_.string();
-					edit_working_directory_buffer_.resize(working_directory_string.size() + 1);
-					std::ranges::copy(working_directory_string, edit_working_directory_buffer_.data());
-					edit_working_directory_buffer_.back() = '\0';
-
-					append_state(State::EDITING_PATH);
-					append_state(State::FOCUSING_PATH_EDITOR_NEXT_FRAME);
-				}
-				else if (ImGui::IsItemHovered())
-				{
-					ImGui::SetTooltip("Edit the current path");
+					std::format_to(
+						std::back_inserter(tooltip),
+						"\t{}\n\t\t{}\n",
+						filename.string(),
+						error_code.message()
+					);
 				}
 			}
 
-			ImGui::SameLine();
-			// Refresh
-			if (ImGui::SmallButton("*"))
+			if (error_code)
 			{
-				update_file_descriptors();
+				tooltip_ = std::move(tooltip);
 			}
-			else if (ImGui::IsItemHovered())
-			{
-				ImGui::SetTooltip("Refresh");
-			}
+
+			clear_selected();
+			update_file_descriptors();
 		}
 
-		// Tooltip
-		if (not tooltip_.empty())
-		{
-			// ImGui::SameLine();
+		show_working_path();
 
-			ImGui::PushStyleColor(ImGuiCol_Text, ImColor{255, 0, 0}.operator ImVec4());
-			ImGui::TextUnformatted(tooltip_.c_str(), tooltip_.c_str() + tooltip_.size());
-			ImGui::PopStyleColor();
-		}
+		show_tooltip();
 
-		// Files
-		{
-			const auto height = ImGui::GetFrameHeightWithSpacing();
+		show_files_window();
 
-			ImGui::BeginChild(
-				"files",
-				{0, -height},
-				ImGuiChildFlags_Borders
-			);
-			ScopeGuard child_guard
-			{
-					[]
-					{
-						ImGui::EndChild();
-					}
-			};
-
-			const auto select_directory = has_flag(FileBrowserFlags::SELECT_DIRECTORY);
-			const auto hide_regular_files = select_directory and has_flag(FileBrowserFlags::HIDE_REGULAR_FILES);
-
-			std::ranges::for_each(
-				file_descriptors_,
-				[&](const file_descriptor& descriptor) noexcept -> void
-				{
-					if (not descriptor.is_directory)
-					{
-						if (hide_regular_files)
-						{
-							return;
-						}
-
-						if (not is_filter_matched(descriptor.extension))
-						{
-							return;
-						}
-					}
-
-					if (const auto selected = selected_filenames_.contains(descriptor.name);
-						ImGui::Selectable(descriptor.display_name.c_str(), selected, ImGuiSelectableFlags_NoAutoClosePopups))
-					{
-						const auto selectable = descriptor.name != ".." and descriptor.is_directory == select_directory;
-						const auto multiple_select =
-								has_flag(FileBrowserFlags::MULTIPLE_SELECTION) and
-								ImGui::GetIO().KeyCtrl and
-								ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
-
-						if (selected)
-						{
-							if (multiple_select)
-							{
-								selected_filenames_.erase(descriptor.name);
-							}
-							else
-							{
-								selected_filenames_ = {descriptor.name};
-							}
-						}
-						else if (selectable)
-						{
-							if (multiple_select)
-							{
-								selected_filenames_.insert(descriptor.name);
-							}
-							else
-							{
-								selected_filenames_ = {descriptor.name};
-							}
-						}
-					}
-
-					if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) and ImGui::IsItemHovered())
-					{
-						if (descriptor.is_directory)
-						{
-							if (descriptor.name == "..")
-							{
-								newly_set_working_directory = working_directory_.parent_path();
-							}
-							else
-							{
-								newly_set_working_directory = working_directory_ / descriptor.name;
-							}
-						}
-						else if (not has_flag(FileBrowserFlags::SELECT_DIRECTORY))
-						{
-							selected_filenames_ = {descriptor.name};
-
-							append_state(State::SELECTED);
-							ImGui::CloseCurrentPopup();
-						}
-					}
-				}
-			);
-		}
-
-		if (newly_set_working_directory.has_value())
-		{
-			set_working_directory(*newly_set_working_directory);
-		}
-
-		if (not has_state(State::EDITING_PATH))
-		{
-			if (const auto select_all =
-						has_flag(FileBrowserFlags::MULTIPLE_SELECTION) and
-						(ImGui::IsKeyDown(ImGuiKey_LeftCtrl) or ImGui::IsKeyDown(ImGuiKey_RightCtrl)) and
-						ImGui::IsKeyPressed(ImGuiKey_A);
-				select_all)
-			{
-				const auto select_directory = has_flag(FileBrowserFlags::SELECT_DIRECTORY);
-
-				selected_filenames_.clear();
-				std::ranges::for_each(
-					// drop parent folder path
-					file_descriptors_ | std::views::drop(1),
-					[&](const file_descriptor& descriptor) noexcept -> void
-					{
-						if (select_directory)
-						{
-							if (descriptor.is_directory)
-							{
-								selected_filenames_.insert(descriptor.name);
-							}
-						}
-						else
-						{
-							if (not descriptor.is_directory and is_filter_matched(descriptor.extension))
-							{
-								selected_filenames_.insert(descriptor.name);
-							}
-						}
-					}
-				);
-			}
-		}
-
-		// OK
-		if (const auto confirm_by_enter =
-					has_flag(FileBrowserFlags::CONFIRM_ON_ENTER) and
-					ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) and
-					ImGui::IsKeyPressed(ImGuiKey_Enter);
-			has_flag(FileBrowserFlags::SELECT_DIRECTORY))
-		{
-			if (ImGui::Button("OK") or confirm_by_enter)
-			{
-				append_state(State::SELECTED);
-				ImGui::CloseCurrentPopup();
-			}
-		}
-		else
-		{
-			ImGui::BeginDisabled(selected_filenames_.empty());
-			const auto ok = ImGui::Button("OK");
-			ImGui::EndDisabled();
-
-			if ((ok or confirm_by_enter) and not selected_filenames_.empty())
-			{
-				append_state(State::SELECTED);
-				ImGui::CloseCurrentPopup();
-			}
-		}
-		ImGui::SameLine();
-		// Cancel
-		if (
-			ImGui::Button("Cancel") or
-			has_state(State::CLOSING) or
-			(
-				has_flag(FileBrowserFlags::CLOSE_ON_ESCAPE) and
-				ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) and
-				ImGui::IsKeyPressed(ImGuiKey_Escape)
-			)
-		)
-		{
-			ImGui::CloseCurrentPopup();
-		}
-		// Filters
-		if (not filters_.empty())
-		{
-			ImGui::SameLine();
-			ImGui::PushItemWidth(8 * ImGui::GetFontSize());
-			if (ImGui::BeginCombo("##filters", filters_[selected_filter_].c_str()))
-			{
-				for (const auto [index, filter]: std::views::enumerate(filters_))
-				{
-					if (const auto selected = index == selected_filter_;
-						ImGui::Selectable(filter.c_str(), selected) and not selected)
-					{
-						selected_filter_ = index;
-					}
-				}
-
-				ImGui::EndCombo();
-			}
-			ImGui::PopItemWidth();
-		}
+		show_bottom_tools();
 	}
 
 	auto FileBrowser::has_selected() const noexcept -> bool
