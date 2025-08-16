@@ -143,7 +143,6 @@ target_link_libraries(
 	${PROJECT_NAME} 
 	PRIVATE 
 
-	${IMFB_SFML_LIBRARIES}
 	imgui::imgui
 )
 
