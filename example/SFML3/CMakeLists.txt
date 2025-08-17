@@ -13,6 +13,10 @@ add_executable(
 	
 	${CMAKE_CURRENT_SOURCE_DIR}/imgui-SFML.hpp
 	${CMAKE_CURRENT_SOURCE_DIR}/imgui-SFML.cpp
+	
+	${CMAKE_CURRENT_SOURCE_DIR}/texture_atlas.hpp
+	${CMAKE_CURRENT_SOURCE_DIR}/texture_atlas.cpp
+
 	${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
 )
 
