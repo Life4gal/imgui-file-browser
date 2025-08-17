@@ -5,6 +5,14 @@
 
 #pragma once
 
+#if not defined(IMFB_DEBUG)
+
+#if defined(DEBUG) or defined(_DEBUG)
+#define IMFB_DEBUG 1
+#endif
+
+#endif
+
 #include <vector>
 #include <filesystem>
 #include <span>
@@ -76,7 +84,7 @@ namespace ImGui
 		constexpr static std::string_view wildcard_filter{".*"};
 
 	private:
-		enum class State : std::uint32_t
+		enum class StateCategory : std::uint32_t
 		{
 			NONE = 0,
 
@@ -135,6 +143,77 @@ namespace ImGui
 			RENAMING = RENAMING_FILE | RENAMING_DIRECTORY,
 		};
 
+#if IMFB_DEBUG
+		// better for debugging
+		class States
+		{
+		public:
+			using value_type = std::uint32_t;
+
+			// ========================
+			// STATUS
+			// ========================
+
+			// 0~3
+
+			value_type position_dirty : 1;
+			value_type reserved_status_1 : 1;
+			value_type reserved_status_2 : 1;
+			value_type reserved_status_3 : 1;
+
+			// ========================
+			// WINDOW
+			// ========================
+
+			// 4~7
+
+			value_type window_opening : 1;
+			value_type window_closing : 1;
+			value_type window_opened : 1;
+			value_type reserved_window_7 : 1;
+
+			// ========================
+			// SELECTION
+			// ========================
+
+			// 8~11
+
+			value_type selected : 1;
+			value_type reserved_selection_9 : 1;
+			value_type reserved_selection_10 : 1;
+			value_type reserved_selection_11 : 1;
+
+			// ========================
+			// INTERACTIVE
+			// ========================
+
+			// 12~15
+
+			// focus the editor(InputText) next frame
+			value_type focusing_editor_next_frame : 1;
+			// double click selectable ==> change directory
+			value_type set_working_directory_next_frame : 1;
+			// right click selectable ==> delete file/directory
+			value_type delete_selected_next_frame : 1;
+			value_type reserved_interactive_15 : 1;
+
+			// 16~23
+
+			// editing working directory editor(InputText)
+			value_type setting_working_directory : 1;
+
+			// editing new file or directory editor(InputText)
+			value_type creating_file : 1;
+			value_type creating_directory : 1;
+
+			// editing rename file or directory editor(InputText)
+			value_type renaming_file : 1;
+			value_type renaming_directory : 1;
+
+			value_type reserved : 11;
+		};
+#endif
+
 		struct file_descriptor
 		{
 			std::filesystem::path name;
@@ -145,6 +224,14 @@ namespace ImGui
 		};
 
 		std::string title_;
+		// ImGui::FileBrowser file_browser{"FileBrowser"};
+		// 
+		// ImGui::Begin("FileBrowser");
+		//
+		// file_browser.show(); <- Error: ImGui::EndPopup(); ==> IM_ASSERT(window->Flags & ImGuiWindowFlags_Popup);
+		//
+		// ImGui::End();
+		std::string title_label_;
 
 		size_type x_;
 		size_type y_;
@@ -153,7 +240,11 @@ namespace ImGui
 
 		FileBrowserFlags flags_;
 		// avoid padding
-		State states_;
+#if IMFB_DEBUG
+		States states_;
+#else
+		StateCategory states_;
+#endif
 
 		// ========================
 		// path
@@ -200,11 +291,11 @@ namespace ImGui
 		// state
 		// ========================
 
-		[[nodiscard]] auto has_state(State state) const noexcept -> bool;
+		[[nodiscard]] auto has_state(StateCategory state) const noexcept -> bool;
 
-		auto append_state(State state) noexcept -> void;
+		auto append_state(StateCategory state) noexcept -> void;
 
-		auto clear_state(State state) noexcept -> void;
+		auto clear_state(StateCategory state) noexcept -> void;
 
 		// editing something(InputText)
 		[[nodiscard]] auto is_state_editing() const noexcept -> bool;

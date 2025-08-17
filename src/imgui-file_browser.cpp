@@ -146,27 +146,287 @@ namespace
 // ReSharper disable once CppInconsistentNaming
 namespace ImGui
 {
-	auto FileBrowser::has_state(const State state) const noexcept -> bool
+	auto FileBrowser::has_state(const StateCategory state) const noexcept -> bool
 	{
+#if IMFB_DEBUG
+		switch (state)
+		{
+			case StateCategory::NONE:
+			{
+				std::unreachable();
+			}
+			case StateCategory::POSITION_DIRTY:
+			{
+				return states_.position_dirty;
+			}
+			case StateCategory::OPENING:
+			{
+				return states_.window_opening;
+			}
+			case StateCategory::CLOSING:
+			{
+				return states_.window_closing;
+			}
+			case StateCategory::OPENED:
+			{
+				return states_.window_opened;
+			}
+			case StateCategory::SELECTED:
+			{
+				return states_.selected;
+			}
+			case StateCategory::FOCUSING_EDITOR_NEXT_FRAME:
+			{
+				return states_.focusing_editor_next_frame;
+			}
+			case StateCategory::SET_WORKING_DIRECTORY_NEXT_FRAME:
+			{
+				return states_.set_working_directory_next_frame;
+			}
+			case StateCategory::DELETE_SELECTED_NEXT_FRAME:
+			{
+				return states_.delete_selected_next_frame;
+			}
+			case StateCategory::SETTING_WORKING_DIRECTORY:
+			{
+				return states_.setting_working_directory;
+			}
+			case StateCategory::CREATING_FILE:
+			{
+				return states_.creating_file;
+			}
+			case StateCategory::CREATING_DIRECTORY:
+			{
+				return states_.creating_directory;
+			}
+			case StateCategory::CREATING:
+			{
+				return states_.creating_file or states_.creating_directory;
+			}
+			case StateCategory::RENAMING_FILE:
+			{
+				return states_.renaming_file;
+			}
+			case StateCategory::RENAMING_DIRECTORY:
+			{
+				return states_.renaming_directory;
+			}
+			case StateCategory::RENAMING:
+			{
+				return states_.renaming_file or states_.renaming_directory;
+			}
+			default:
+			{
+				std::unreachable();
+			}
+		}
+#else
+		assert(state != StateCategory::NONE);
+
 		return std::to_underlying(states_) & std::to_underlying(state);
+#endif
 	}
 
-	auto FileBrowser::append_state(const State state) noexcept -> void
+	auto FileBrowser::append_state(const StateCategory state) noexcept -> void
 	{
-		states_ = static_cast<State>(std::to_underlying(states_) | std::to_underlying(state));
+#if IMFB_DEBUG
+		switch (state)
+		{
+			case StateCategory::NONE:
+			{
+				std::unreachable();
+			}
+			case StateCategory::POSITION_DIRTY:
+			{
+				states_.position_dirty = 1;
+				break;
+			}
+			case StateCategory::OPENING:
+			{
+				states_.window_opening = 1;
+				break;
+			}
+			case StateCategory::CLOSING:
+			{
+				states_.window_closing = 1;
+				break;
+			}
+			case StateCategory::OPENED:
+			{
+				states_.window_opened = 1;
+				break;
+			}
+			case StateCategory::SELECTED:
+			{
+				states_.selected = 1;
+				break;
+			}
+			case StateCategory::FOCUSING_EDITOR_NEXT_FRAME:
+			{
+				states_.focusing_editor_next_frame = 1;
+				break;
+			}
+			case StateCategory::SET_WORKING_DIRECTORY_NEXT_FRAME:
+			{
+				states_.set_working_directory_next_frame = 1;
+				break;
+			}
+			case StateCategory::DELETE_SELECTED_NEXT_FRAME:
+			{
+				states_.delete_selected_next_frame = 1;
+				break;
+			}
+			case StateCategory::SETTING_WORKING_DIRECTORY:
+			{
+				states_.setting_working_directory = 1;
+				break;
+			}
+			case StateCategory::CREATING_FILE:
+			{
+				states_.creating_file = 1;
+				break;
+			}
+			case StateCategory::CREATING_DIRECTORY:
+			{
+				states_.creating_directory = 1;
+				break;
+			}
+			case StateCategory::CREATING:
+			{
+				std::unreachable();
+			}
+			case StateCategory::RENAMING_FILE:
+			{
+				states_.renaming_file = 1;
+				break;
+			}
+			case StateCategory::RENAMING_DIRECTORY:
+			{
+				states_.renaming_directory = 1;
+				break;
+			}
+			case StateCategory::RENAMING:
+			{
+				std::unreachable();
+			}
+			default:
+			{
+				std::unreachable();
+			}
+		}
+#else
+		assert(state != StateCategory::NONE);
+		assert(state != StateCategory::CREATING);
+		assert(state != StateCategory::RENAMING);
+
+		states_ = static_cast<StateCategory>(std::to_underlying(states_) | std::to_underlying(state));
+#endif
 	}
 
-	auto FileBrowser::clear_state(const State state) noexcept -> void
+	auto FileBrowser::clear_state(const StateCategory state) noexcept -> void
 	{
-		states_ = static_cast<State>(std::to_underlying(states_) & ~std::to_underlying(state));
+#if IMFB_DEBUG
+		switch (state)
+		{
+			case StateCategory::NONE:
+			{
+				std::unreachable();
+			}
+			case StateCategory::POSITION_DIRTY:
+			{
+				states_.position_dirty = 0;
+				break;
+			}
+			case StateCategory::OPENING:
+			{
+				states_.window_opening = 0;
+				break;
+			}
+			case StateCategory::CLOSING:
+			{
+				states_.window_closing = 0;
+				break;
+			}
+			case StateCategory::OPENED:
+			{
+				states_.window_opened = 0;
+				break;
+			}
+			case StateCategory::SELECTED:
+			{
+				states_.selected = 0;
+				break;
+			}
+			case StateCategory::FOCUSING_EDITOR_NEXT_FRAME:
+			{
+				states_.focusing_editor_next_frame = 0;
+				break;
+			}
+			case StateCategory::SET_WORKING_DIRECTORY_NEXT_FRAME:
+			{
+				states_.set_working_directory_next_frame = 0;
+				break;
+			}
+			case StateCategory::DELETE_SELECTED_NEXT_FRAME:
+			{
+				states_.delete_selected_next_frame = 0;
+				break;
+			}
+			case StateCategory::SETTING_WORKING_DIRECTORY:
+			{
+				states_.setting_working_directory = 0;
+				break;
+			}
+			case StateCategory::CREATING_FILE:
+			{
+				states_.creating_file = 0;
+				break;
+			}
+			case StateCategory::CREATING_DIRECTORY:
+			{
+				states_.creating_directory = 0;
+				break;
+			}
+			case StateCategory::CREATING:
+			{
+				states_.creating_file = 0;
+				states_.creating_directory = 0;
+				break;
+			}
+			case StateCategory::RENAMING_FILE:
+			{
+				states_.renaming_file = 0;
+				break;
+			}
+			case StateCategory::RENAMING_DIRECTORY:
+			{
+				states_.renaming_directory = 0;
+				break;
+			}
+			case StateCategory::RENAMING:
+			{
+				states_.renaming_file = 0;
+				states_.renaming_directory = 0;
+				break;
+			}
+			default:
+			{
+				std::unreachable();
+			}
+		}
+#else
+		assert(state != StateCategory::NONE);
+
+		states_ = static_cast<StateCategory>(std::to_underlying(states_) & ~std::to_underlying(state));
+#endif
 	}
 
 	auto FileBrowser::is_state_editing() const noexcept -> bool
 	{
 		return
-				has_state(State::SETTING_WORKING_DIRECTORY) or
-				has_state(State::CREATING) or
-				has_state(State::RENAMING);
+				has_state(StateCategory::SETTING_WORKING_DIRECTORY) or
+				has_state(StateCategory::CREATING) or
+				has_state(StateCategory::RENAMING);
 	}
 
 	auto FileBrowser::is_filter_matched(const std::filesystem::path& extension) const noexcept -> bool
@@ -318,9 +578,9 @@ namespace ImGui
 
 	auto FileBrowser::show_working_path() noexcept -> void
 	{
-		if (has_state(State::SETTING_WORKING_DIRECTORY))
+		if (has_state(StateCategory::SETTING_WORKING_DIRECTORY))
 		{
-			if (has_state(State::FOCUSING_EDITOR_NEXT_FRAME))
+			if (has_state(StateCategory::FOCUSING_EDITOR_NEXT_FRAME))
 			{
 				ImGui::SetKeyboardFocusHere();
 			}
@@ -338,7 +598,7 @@ namespace ImGui
 
 			if (ImGui::IsItemDeactivatedAfterEdit())
 			{
-				clear_state(State::SETTING_WORKING_DIRECTORY);
+				clear_state(StateCategory::SETTING_WORKING_DIRECTORY);
 
 				std::error_code error_code{};
 
@@ -359,7 +619,7 @@ namespace ImGui
 					if (is_directory(path, error_code))
 					{
 						working_directory_ = std::move(path);
-						append_state(State::SET_WORKING_DIRECTORY_NEXT_FRAME);
+						append_state(StateCategory::SET_WORKING_DIRECTORY_NEXT_FRAME);
 						break;
 					}
 
@@ -373,7 +633,7 @@ namespace ImGui
 					if (is_directory(parent_path, error_code))
 					{
 						working_directory_ = std::move(parent_path);
-						append_state(State::SET_WORKING_DIRECTORY_NEXT_FRAME);
+						append_state(StateCategory::SET_WORKING_DIRECTORY_NEXT_FRAME);
 						break;
 					}
 
@@ -431,7 +691,7 @@ namespace ImGui
 			if (pressed)
 			{
 				working_directory_ = combined_working_directory;
-				append_state(State::SET_WORKING_DIRECTORY_NEXT_FRAME);
+				append_state(StateCategory::SET_WORKING_DIRECTORY_NEXT_FRAME);
 			}
 
 			if (has_flag(FileBrowserFlags::ALLOW_SET_WORKING_DIRECTORY))
@@ -450,8 +710,8 @@ namespace ImGui
 
 					std::ranges::copy(working_directory_string, edit_working_directory_buffer_.data.get());
 
-					append_state(State::SETTING_WORKING_DIRECTORY);
-					append_state(State::FOCUSING_EDITOR_NEXT_FRAME);
+					append_state(StateCategory::SETTING_WORKING_DIRECTORY);
+					append_state(StateCategory::FOCUSING_EDITOR_NEXT_FRAME);
 				}
 				else if (ImGui::IsItemHovered())
 				{
@@ -501,8 +761,8 @@ namespace ImGui
 
 					clear_selected();
 
-					append_state(State::CREATING_FILE);
-					append_state(State::FOCUSING_EDITOR_NEXT_FRAME);
+					append_state(StateCategory::CREATING_FILE);
+					append_state(StateCategory::FOCUSING_EDITOR_NEXT_FRAME);
 				}
 
 				if (has_flag(FileBrowserFlags::ALLOW_CREATE_DIRECTORY) and ImGui::MenuItem("New directory"))
@@ -512,8 +772,8 @@ namespace ImGui
 
 					clear_selected();
 
-					append_state(State::CREATING_DIRECTORY);
-					append_state(State::FOCUSING_EDITOR_NEXT_FRAME);
+					append_state(StateCategory::CREATING_DIRECTORY);
+					append_state(StateCategory::FOCUSING_EDITOR_NEXT_FRAME);
 				}
 
 				ImGui::EndPopup();
@@ -594,13 +854,13 @@ namespace ImGui
 
 							if (descriptor.is_directory)
 							{
-								append_state(State::RENAMING_DIRECTORY);
+								append_state(StateCategory::RENAMING_DIRECTORY);
 							}
 							else
 							{
-								append_state(State::RENAMING_FILE);
+								append_state(StateCategory::RENAMING_FILE);
 							}
-							append_state(State::FOCUSING_EDITOR_NEXT_FRAME);
+							append_state(StateCategory::FOCUSING_EDITOR_NEXT_FRAME);
 						}
 					}
 
@@ -613,7 +873,7 @@ namespace ImGui
 						{
 							selected_filenames_ = {descriptor.name};
 
-							append_state(State::DELETE_SELECTED_NEXT_FRAME);
+							append_state(StateCategory::DELETE_SELECTED_NEXT_FRAME);
 						}
 					}
 
@@ -635,13 +895,13 @@ namespace ImGui
 						working_directory_ = working_directory_ / descriptor.name;
 					}
 
-					append_state(State::SET_WORKING_DIRECTORY_NEXT_FRAME);
+					append_state(StateCategory::SET_WORKING_DIRECTORY_NEXT_FRAME);
 				}
 				else if (not has_flag(FileBrowserFlags::SELECT_DIRECTORY))
 				{
 					selected_filenames_ = {descriptor.name};
 
-					append_state(State::SELECTED);
+					append_state(StateCategory::SELECTED);
 					ImGui::CloseCurrentPopup();
 				}
 			}
@@ -671,7 +931,7 @@ namespace ImGui
 			ImGui::Selectable(descriptor.display_name.c_str(), false, ImGuiSelectableFlags_NoAutoClosePopups);
 		}
 
-		if (has_state(State::FOCUSING_EDITOR_NEXT_FRAME))
+		if (has_state(StateCategory::FOCUSING_EDITOR_NEXT_FRAME))
 		{
 			ImGui::SetKeyboardFocusHere();
 		}
@@ -687,19 +947,19 @@ namespace ImGui
 		);
 		ImGui::PopItemWidth();
 
-		clear_state(State::FOCUSING_EDITOR_NEXT_FRAME);
+		clear_state(StateCategory::FOCUSING_EDITOR_NEXT_FRAME);
 
 		if (ImGui::IsItemDeactivatedAfterEdit())
 		{
-			const auto file = has_state(State::CREATING_FILE);
+			const auto file = has_state(StateCategory::CREATING_FILE);
 
 			if (file)
 			{
-				clear_state(State::CREATING_FILE);
+				clear_state(StateCategory::CREATING_FILE);
 			}
 			else
 			{
-				clear_state(State::CREATING_DIRECTORY);
+				clear_state(StateCategory::CREATING_DIRECTORY);
 			}
 
 			const auto length = std::strlen(edit_create_file_or_directory_buffer_.data.get());
@@ -788,7 +1048,7 @@ namespace ImGui
 			}
 			else
 			{
-				if (has_state(State::FOCUSING_EDITOR_NEXT_FRAME))
+				if (has_state(StateCategory::FOCUSING_EDITOR_NEXT_FRAME))
 				{
 					ImGui::SetKeyboardFocusHere();
 				}
@@ -804,19 +1064,19 @@ namespace ImGui
 				);
 				ImGui::PopItemWidth();
 
-				clear_state(State::FOCUSING_EDITOR_NEXT_FRAME);
+				clear_state(StateCategory::FOCUSING_EDITOR_NEXT_FRAME);
 
 				if (ImGui::IsItemDeactivatedAfterEdit())
 				{
-					const auto file = has_state(State::RENAMING_FILE);
+					const auto file = has_state(StateCategory::RENAMING_FILE);
 
 					if (file)
 					{
-						clear_state(State::RENAMING_FILE);
+						clear_state(StateCategory::RENAMING_FILE);
 					}
 					else
 					{
-						clear_state(State::RENAMING_DIRECTORY);
+						clear_state(StateCategory::RENAMING_DIRECTORY);
 					}
 
 					const auto length = std::strlen(edit_rename_file_or_directory_buffer_.data.get());
@@ -877,8 +1137,8 @@ namespace ImGui
 				}
 		};
 
-		const auto creating_file_or_directory = has_state(State::CREATING) and (selected_filenames_.empty());
-		const auto renaming_file_or_directory = has_state(State::RENAMING) and (selected_filenames_.size() == 1);
+		const auto creating_file_or_directory = has_state(StateCategory::CREATING) and (selected_filenames_.empty());
+		const auto renaming_file_or_directory = has_state(StateCategory::RENAMING) and (selected_filenames_.size() == 1);
 
 		assert(
 			(creating_file_or_directory == false and renaming_file_or_directory == false) or
@@ -949,7 +1209,7 @@ namespace ImGui
 				// select working directory anyway
 				if (ImGui::Button("OK") or confirm_by_enter)
 				{
-					append_state(State::SELECTED);
+					append_state(StateCategory::SELECTED);
 					ImGui::CloseCurrentPopup();
 				}
 			}
@@ -961,7 +1221,7 @@ namespace ImGui
 
 				if ((ok or confirm_by_enter) and not selected_filenames_.empty())
 				{
-					append_state(State::SELECTED);
+					append_state(StateCategory::SELECTED);
 					ImGui::CloseCurrentPopup();
 				}
 			}
@@ -978,7 +1238,7 @@ namespace ImGui
 					ImGui::IsWindowFocused(ImGuiFocusedFlags_NoPopupHierarchy) and
 					ImGui::IsKeyPressed(ImGuiKey_Escape);
 
-			if (ImGui::Button("Cancel") or has_state(State::CLOSING) or close_by_escape)
+			if (ImGui::Button("Cancel") or has_state(StateCategory::CLOSING) or close_by_escape)
 			{
 				ImGui::CloseCurrentPopup();
 			}
@@ -1018,18 +1278,25 @@ namespace ImGui
 		std::filesystem::path open_directory
 	) noexcept
 		: title_{title},
+		  title_label_{std::format("{}##FileBrowser", title)},
 		  x_{x},
 		  y_{y},
 		  width_{width},
 		  height_{height},
 		  flags_{flags},
-		  states_{State::NONE},
+#if not IMFB_DEBUG
+		  states_{StateCategory::NONE},
+#endif
 		  working_directory_{std::move(open_directory)},
 		  edit_working_directory_buffer_{.data = nullptr, .capacity = 0},
 		  edit_create_file_or_directory_buffer_{.data = nullptr, .capacity = 0},
 		  edit_rename_file_or_directory_buffer_{.data = nullptr, .capacity = 0},
 		  selected_filter_{0}
 	{
+#if IMFB_DEBUG
+		std::memset(&states_, 0, sizeof(States::value_type));
+#endif
+
 		edit_create_file_or_directory_buffer_ =
 		{
 				.data = std::make_unique_for_overwrite<char[]>(64),
@@ -1112,13 +1379,13 @@ namespace ImGui
 	auto FileBrowser::set_position_x(const size_type x) noexcept -> void
 	{
 		x_ = x;
-		append_state(State::POSITION_DIRTY);
+		append_state(StateCategory::POSITION_DIRTY);
 	}
 
 	auto FileBrowser::set_position_y(const size_type y) noexcept -> void
 	{
 		y_ = y;
-		append_state(State::POSITION_DIRTY);
+		append_state(StateCategory::POSITION_DIRTY);
 	}
 
 	auto FileBrowser::get_size_width() const noexcept -> size_type
@@ -1210,7 +1477,7 @@ namespace ImGui
 
 	auto FileBrowser::is_opened() const noexcept -> bool
 	{
-		return has_state(State::OPENED);
+		return has_state(StateCategory::OPENED);
 	}
 
 	auto FileBrowser::open() noexcept -> void
@@ -1218,8 +1485,8 @@ namespace ImGui
 		update_file_descriptors();
 		clear_selected();
 
-		append_state(State::OPENING);
-		clear_state(State::CLOSING);
+		append_state(StateCategory::OPENING);
+		clear_state(StateCategory::CLOSING);
 	}
 
 	auto FileBrowser::is_closed() const noexcept -> bool
@@ -1231,33 +1498,32 @@ namespace ImGui
 	{
 		clear_selected();
 
-		append_state(State::CLOSING);
-		clear_state(State::OPENING);
+		append_state(StateCategory::CLOSING);
+		clear_state(StateCategory::OPENING);
 	}
 
 	auto FileBrowser::show() noexcept -> void
 	{
-		clear_state(State::OPENED);
-
 		ImGui::PushID(this);
 		ScopeGuard id_guard
 		{
 				[this]
 				{
-					clear_state(State::OPENING);
-					clear_state(State::CLOSING);
+					clear_state(StateCategory::OPENING);
+					clear_state(StateCategory::CLOSING);
 					ImGui::PopID();
 				}
 		};
 
-		if (has_state(State::OPENING))
+		if (has_state(StateCategory::OPENING))
 		{
-			ImGui::OpenPopup(title_.c_str());
+			ImGui::OpenPopup(title_label_.c_str());
 		}
+		clear_state(StateCategory::OPENED);
 
-		if (has_state(State::OPENING) and has_flag(FileBrowserFlags::NO_MODAL))
+		if (has_state(StateCategory::OPENING) and has_flag(FileBrowserFlags::NO_MODAL))
 		{
-			if (has_state(State::POSITION_DIRTY))
+			if (has_state(StateCategory::POSITION_DIRTY))
 			{
 				ImGui::SetNextWindowPos({static_cast<float>(get_position_x()), static_cast<float>(get_position_y())});
 			}
@@ -1265,7 +1531,7 @@ namespace ImGui
 		}
 		else
 		{
-			if (has_state(State::POSITION_DIRTY))
+			if (has_state(StateCategory::POSITION_DIRTY))
 			{
 				ImGui::SetNextWindowPos({static_cast<float>(get_position_x()), static_cast<float>(get_position_y())}, ImGuiCond_FirstUseEver);
 			}
@@ -1275,7 +1541,7 @@ namespace ImGui
 		if (has_flag(FileBrowserFlags::NO_MODAL))
 		{
 			if (not ImGui::BeginPopup(
-				title_.c_str(),
+				title_label_.c_str(),
 				has_flag(FileBrowserFlags::NO_TITLEBAR) ? ImGuiWindowFlags_NoTitleBar : 0
 			))
 			{
@@ -1285,7 +1551,7 @@ namespace ImGui
 		else
 		{
 			if (not ImGui::BeginPopupModal(
-				title_.c_str(),
+				title_label_.c_str(),
 				nullptr,
 				has_flag(FileBrowserFlags::NO_TITLEBAR) ? ImGuiWindowFlags_NoTitleBar : 0
 			))
@@ -1294,7 +1560,7 @@ namespace ImGui
 			}
 		}
 
-		append_state(State::OPENED);
+		append_state(StateCategory::OPENED);
 		ScopeGuard popup_guard
 		{
 				[]
@@ -1303,16 +1569,16 @@ namespace ImGui
 				}
 		};
 
-		if (has_state(State::SET_WORKING_DIRECTORY_NEXT_FRAME))
+		if (has_state(StateCategory::SET_WORKING_DIRECTORY_NEXT_FRAME))
 		{
 			set_working_directory(working_directory_);
-			clear_state(State::SET_WORKING_DIRECTORY_NEXT_FRAME);
+			clear_state(StateCategory::SET_WORKING_DIRECTORY_NEXT_FRAME);
 
 			clear_selected();
 		}
-		if (has_state(State::DELETE_SELECTED_NEXT_FRAME))
+		if (has_state(StateCategory::DELETE_SELECTED_NEXT_FRAME))
 		{
-			clear_state(State::DELETE_SELECTED_NEXT_FRAME);
+			clear_state(StateCategory::DELETE_SELECTED_NEXT_FRAME);
 
 			std::error_code error_code{};
 
@@ -1354,7 +1620,7 @@ namespace ImGui
 
 	auto FileBrowser::has_selected() const noexcept -> bool
 	{
-		return has_state(State::SELECTED);
+		return has_state(StateCategory::SELECTED);
 	}
 
 	auto FileBrowser::get_selected() const noexcept -> std::filesystem::path
@@ -1393,7 +1659,7 @@ namespace ImGui
 	{
 		selected_filenames_.clear();
 
-		clear_state(State::SELECTED);
+		clear_state(StateCategory::SELECTED);
 	}
 
 	auto FileBrowser::get_filter() const noexcept -> const std::vector<std::string>&
