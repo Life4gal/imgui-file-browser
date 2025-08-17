@@ -51,9 +51,9 @@ namespace
 		if (callback_data and callback_data->EventFlag & ImGuiInputTextFlags_CallbackResize)
 		{
 			if (auto* string = static_cast<FileBrowser::edit_string_buffer_type*>(callback_data->UserData);
-				std::cmp_less(string->length, callback_data->BufSize))
+				std::cmp_less(string->capacity, callback_data->BufSize))
 			{
-				const auto old_size = string->length;
+				const auto old_size = string->capacity;
 				const auto buf_size = static_cast<std::size_t>(callback_data->BufSize);
 				const auto new_size = static_cast<std::size_t>(static_cast<float>(std::ranges::max(old_size, buf_size)) * 1.5f);
 
@@ -217,9 +217,15 @@ namespace ImGui
 
 		if (error_code)
 		{
-			// toro: error handling?
+			tooltip_ = std::format(
+				"Error occurred while iterate\n\t{}\n\t{}",
+				working_directory_.string(),
+				error_code.message()
+			);
 			return;
 		}
+
+		std::string tooltip{"Error occurred\n"};
 
 		std::ranges::for_each(
 			directory_iterator,
@@ -242,6 +248,13 @@ namespace ImGui
 					descriptor.extension = ".?";
 
 					descriptor.display_name = error_code.message();
+
+					std::format_to(
+						std::back_inserter(tooltip),
+						"\t{}\n\t\t{}\n",
+						entry.path().string(),
+						error_code.message()
+					);
 				}
 				else
 				{
@@ -264,6 +277,11 @@ namespace ImGui
 			}
 		);
 
+		if (error_code)
+		{
+			tooltip_ = std::move(tooltip);
+		}
+
 		if (file_descriptors_.size() > 2)
 		{
 			std::ranges::sort(
@@ -280,7 +298,7 @@ namespace ImGui
 					{
 						const auto to_lower = [](const char c) noexcept -> char
 						{
-							return static_cast<char>(std::tolower(c));
+							return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 						};
 
 						std::ranges::transform(name, name.begin(), to_lower);
@@ -311,7 +329,7 @@ namespace ImGui
 			ImGui::InputText(
 				"##working_directory_path",
 				edit_working_directory_buffer_.data.get(),
-				edit_working_directory_buffer_.length,
+				edit_working_directory_buffer_.capacity,
 				ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_AutoSelectAll,
 				expand_string_buffer,
 				&edit_working_directory_buffer_
@@ -426,8 +444,8 @@ namespace ImGui
 
 					const auto working_directory_string = working_directory_.string();
 
-					edit_working_directory_buffer_.length = working_directory_string.size() + 1;
-					edit_working_directory_buffer_.data = std::make_unique_for_overwrite<char[]>(edit_working_directory_buffer_.length);
+					edit_working_directory_buffer_.capacity = working_directory_string.size() + 1;
+					edit_working_directory_buffer_.data = std::make_unique_for_overwrite<char[]>(edit_working_directory_buffer_.capacity);
 					edit_working_directory_buffer_.data[working_directory_string.size()] = '\0';
 
 					std::ranges::copy(working_directory_string, edit_working_directory_buffer_.data.get());
@@ -568,8 +586,8 @@ namespace ImGui
 
 							const auto filename_string = descriptor.name.string();
 
-							edit_rename_file_or_directory_buffer_.length = filename_string.size() + 1;
-							edit_rename_file_or_directory_buffer_.data = std::make_unique_for_overwrite<char[]>(edit_rename_file_or_directory_buffer_.length);
+							edit_rename_file_or_directory_buffer_.capacity = filename_string.size() + 1;
+							edit_rename_file_or_directory_buffer_.data = std::make_unique_for_overwrite<char[]>(edit_rename_file_or_directory_buffer_.capacity);
 							edit_rename_file_or_directory_buffer_.data[filename_string.size()] = '\0';
 
 							std::ranges::copy(filename_string, edit_rename_file_or_directory_buffer_.data.get());
@@ -662,7 +680,7 @@ namespace ImGui
 		ImGui::InputText(
 			"##create_file_or_directory",
 			edit_create_file_or_directory_buffer_.data.get(),
-			edit_create_file_or_directory_buffer_.length,
+			edit_create_file_or_directory_buffer_.capacity,
 			ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_AutoSelectAll,
 			expand_string_buffer,
 			&edit_create_file_or_directory_buffer_
@@ -687,7 +705,7 @@ namespace ImGui
 			const auto length = std::strlen(edit_create_file_or_directory_buffer_.data.get());
 			edit_create_file_or_directory_buffer_.data[length] = '\0';
 
-			if (length == '\0')
+			if (length == 0)
 			{
 				if (file)
 				{
@@ -701,32 +719,43 @@ namespace ImGui
 			else
 			{
 				const std::string_view view{edit_create_file_or_directory_buffer_.data.get(), edit_create_file_or_directory_buffer_.data.get() + static_cast<std::ptrdiff_t>(length)};
-				const auto full_path = working_directory_ / view;
 
-				if (file)
+				if (const auto full_path = working_directory_ / view;
+					exists(full_path))
 				{
-					if (std::ofstream new_file{full_path};
-						new_file.is_open())
-					{
-						new_file.close();
-						update_file_descriptors();
-					}
-					else
-					{
-						const auto error_code = std::make_error_code(static_cast<std::errc>(errno));
-						tooltip_ = std::format("Failed to create file\n\t{}\n{}", view, error_code.message());
-					}
+					tooltip_ = std::format(
+						"{} {} already exist, operation cancelled.",
+						file ? "File" : "Directory",
+						view
+					);
 				}
 				else
 				{
-					if (std::error_code error_code{};
-						create_directory(full_path, error_code))
+					if (file)
 					{
-						update_file_descriptors();
+						if (std::ofstream new_file{full_path};
+							new_file.is_open())
+						{
+							new_file.close();
+							update_file_descriptors();
+						}
+						else
+						{
+							const auto error_code = std::make_error_code(static_cast<std::errc>(errno));
+							tooltip_ = std::format("Failed to create file\n\t{}\n{}", view, error_code.message());
+						}
 					}
 					else
 					{
-						tooltip_ = std::format("Failed to create directory\n\t{}\n\t{}", full_path.string(), error_code.message());
+						if (std::error_code error_code{};
+							create_directory(full_path, error_code))
+						{
+							update_file_descriptors();
+						}
+						else
+						{
+							tooltip_ = std::format("Failed to create directory\n\t{}\n\t{}", full_path.string(), error_code.message());
+						}
 					}
 				}
 			}
@@ -768,7 +797,7 @@ namespace ImGui
 				ImGui::InputText(
 					"##rename_file_or_directory",
 					edit_rename_file_or_directory_buffer_.data.get(),
-					edit_rename_file_or_directory_buffer_.length,
+					edit_rename_file_or_directory_buffer_.capacity,
 					ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_AutoSelectAll,
 					expand_string_buffer,
 					&edit_rename_file_or_directory_buffer_
@@ -791,9 +820,9 @@ namespace ImGui
 					}
 
 					const auto length = std::strlen(edit_rename_file_or_directory_buffer_.data.get());
-					edit_rename_file_or_directory_buffer_.data[length] = 0;
+					edit_rename_file_or_directory_buffer_.data[length] = '\0';
 
-					if (length == '\0')
+					if (length == 0)
 					{
 						if (file)
 						{
@@ -945,9 +974,9 @@ namespace ImGui
 			const auto close_by_escape =
 					has_flag(FileBrowserFlags::CLOSE_ON_ESCAPE) and
 					not is_state_editing() and
-					ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) and
+					// ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) and
 					ImGui::IsWindowFocused(ImGuiFocusedFlags_NoPopupHierarchy) and
-					ImGui::IsKeyPressed(ImGuiKey_Enter);
+					ImGui::IsKeyPressed(ImGuiKey_Escape);
 
 			if (ImGui::Button("Cancel") or has_state(State::CLOSING) or close_by_escape)
 			{
@@ -996,15 +1025,15 @@ namespace ImGui
 		  flags_{flags},
 		  states_{State::NONE},
 		  working_directory_{std::move(open_directory)},
-		  edit_working_directory_buffer_{.data = nullptr, .length = 0},
-		  edit_create_file_or_directory_buffer_{.data = nullptr, .length = 0},
-		  edit_rename_file_or_directory_buffer_{.data = nullptr, .length = 0},
+		  edit_working_directory_buffer_{.data = nullptr, .capacity = 0},
+		  edit_create_file_or_directory_buffer_{.data = nullptr, .capacity = 0},
+		  edit_rename_file_or_directory_buffer_{.data = nullptr, .capacity = 0},
 		  selected_filter_{0}
 	{
 		edit_create_file_or_directory_buffer_ =
 		{
 				.data = std::make_unique_for_overwrite<char[]>(64),
-				.length = 64,
+				.capacity = 64,
 		};
 		edit_create_file_or_directory_buffer_.data[0] = '\0';
 	}
@@ -1181,7 +1210,7 @@ namespace ImGui
 
 	auto FileBrowser::is_opened() const noexcept -> bool
 	{
-		return not is_closed();
+		return has_state(State::OPENED);
 	}
 
 	auto FileBrowser::open() noexcept -> void
@@ -1195,7 +1224,7 @@ namespace ImGui
 
 	auto FileBrowser::is_closed() const noexcept -> bool
 	{
-		return has_state(State::OPENED);
+		return not is_opened();
 	}
 
 	auto FileBrowser::close() noexcept -> void

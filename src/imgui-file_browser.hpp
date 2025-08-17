@@ -68,7 +68,7 @@ namespace ImGui
 		struct edit_string_buffer_type
 		{
 			std::unique_ptr<char[]> data;
-			std::size_t length;
+			std::size_t capacity;
 		};
 
 		constexpr static std::string_view parent_path_name{"(last level)"};
