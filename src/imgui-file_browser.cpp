@@ -46,6 +46,11 @@ namespace
 	FileBrowser::size_type default_width{700};
 	FileBrowser::size_type default_height{450};
 
+	[[nodiscard]] auto make_title_label(const std::string_view title) noexcept -> std::string
+	{
+		return std::format("{}##FileBrowser", title);
+	}
+
 	auto expand_string_buffer(ImGuiInputTextCallbackData* callback_data) noexcept -> int
 	{
 		if (callback_data and callback_data->EventFlag & ImGuiInputTextFlags_CallbackResize)
@@ -1278,7 +1283,7 @@ namespace ImGui
 		std::filesystem::path open_directory
 	) noexcept
 		: title_{title},
-		  title_label_{std::format("{}##FileBrowser", title)},
+		  title_label_{make_title_label(title_)},
 		  x_{x},
 		  y_{y},
 		  width_{width},
@@ -1358,6 +1363,7 @@ namespace ImGui
 	auto FileBrowser::set_title(const std::string_view title) noexcept -> void
 	{
 		title_ = title;
+		title_label_ = make_title_label(title_);
 	}
 
 	auto FileBrowser::get_position_x() const noexcept -> size_type
